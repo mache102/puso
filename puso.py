@@ -45,11 +45,9 @@ def run():
             """
 
             error_message = textwrap.dedent(error_message).lstrip('\n')
-            print(error_message)
+            print(error_message, file=sys.stderr)
 
             #print(f"{filepath}:{idx+1}: error: expected ';'")
 
 
-            sys.exit()
-
-
+            sys.exit(1)
