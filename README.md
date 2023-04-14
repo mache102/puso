@@ -7,10 +7,12 @@ Python User Sanity Obliterator
 
 # Changelog:
 
-2023-04-11 - Added semicolon enforcing
-           - sys.stderr pull from AlbertUnruh
+2023-04-11 
+- Added semicolon enforcing  
+- sys.stderr pull from AlbertUnruh
 
-2023-04-14 - Added verbose imports
+2023-04-14 
+- Added verbose imports
 
 
 ```
