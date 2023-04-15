@@ -1,19 +1,21 @@
-'''
-PUSO: Python User Sanity Obliterator
-'''
 import ast
 import os
 import sys
 import inspect
 import textwrap
 
-class Check:
+'''
+PUSO: Python User Sanity Obliterator
+'''
+
+class _Check:
     def __init__(self, file_path, content):
         self.file_path = file_path
         self.content = content
 
         self.import_strs = {'from', 'import'}
         self.end_chars = {':', ';', ',', '\\'}
+        self.implicit_end_chars = {')', ']', '}', '"""', '\'\'\''}
 
     def throw_error(self, 
                     idx, 
@@ -36,6 +38,8 @@ class Check:
 
         error_message = textwrap.dedent(error_message).lstrip('\n')
         print(error_message, file=sys.stderr)
+        
+        # The OG error message. Prayge
         #print(f"{filepath}:{idx+1}: error: expected ';'")
 
         sys.exit(1)
@@ -66,11 +70,23 @@ class Check:
 
         return prev_contents
     
+    def has_implicit_line_break(self, line):
+        try:
+            ast.parse(line, mode='eval')
+            return False
+        except SyntaxError:
+            return not any(line[-1] == x for x in self.implicit_end_chars)
+    
     def imports(self, length_requirement=True):
         for idx, line in enumerate(self.content):
             if not line.strip():
                 continue 
 
+            if '__import__' in line:
+                self.throw_error(idx, 
+                                 type='SyntaxError', 
+                                 message="deprecated syntax; please use \"from...import\" instead (thx Albert lol)",
+                                 error_position=0)
             # check if statement actually imports something
             is_importer = 0  
             try:
@@ -84,6 +100,9 @@ class Check:
                     break 
             if not is_importer:
                 continue 
+
+            # fix for one-liners
+            line = line.split(';')[0]
 
             # Code imports something
             if line.startswith('import'):
@@ -147,6 +166,9 @@ class Check:
             if not line.strip():
                 continue 
 
+            if self.has_implicit_line_break(line):
+                continue
+
             if line.startswith('\'\'\'') or line.startswith('"""'):
                 comment_enabled = not(comment_enabled)
                 continue
@@ -160,7 +182,38 @@ class Check:
             else:
                 self.throw_error(idx, type='SyntaxError', message="expected ';'")
 
-    
+
+    def one_line(self, strict=False):
+        # 'strict' means no spaces after semicolon here
+
+        if len(self.content) > 1:
+            self.throw_error(1, 
+                            type='SyntaxError', 
+                            message=f"maximum program line count (1) exceeded",
+                            error_position=0)  
+
+        # prevent the word wrap + space bypass
+        one_liner = self.content[0]
+        lines = one_liner.split(';')
+        
+        if strict: 
+            line_start = ' '
+            msg = 'space after semicolon is not allowed' 
+        else:
+            # starts with two or more spaces 
+            line_start = '  '
+            msg = 'nice try buddy.'
+
+        error_position = 0
+        for line in lines:
+            if line.startswith(line_start):
+                self.throw_error(0, 
+                                type='SyntaxError', 
+                                message=msg,
+                                error_position=error_position+int(not(strict))+1)  
+            
+            error_position += len(line)
+
 
 def run(custom_file_path=None):
 
@@ -176,9 +229,9 @@ def run(custom_file_path=None):
     if custom_file_path is None:
         custom_file_path = file_path
     
-    check = Check(custom_file_path, content)
+    check = _Check(custom_file_path, content)
 
     check.imports()
     check.semicolon()
-
+    check.one_line()
 
