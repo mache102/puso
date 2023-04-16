@@ -4,18 +4,55 @@ import sys
 import inspect
 import textwrap
 
-'''
+"""
 PUSO: Python User Sanity Obliterator
-'''
+"""
 
-class _Check:
-    def __init__(self, file_path, content):
-        self.file_path = file_path
+class _PUSO:
+    def __init__(self, content, file_path, flags=None, action=None):
+        """
+        Initialize the vibe checker.
+
+        Parameters:
+        -----------
+        content (list): Contents of file to be checked
+
+        file_path (str): File path shown in error messages 
+                         (defaults to path of content; 
+                         can be customized to hide paths)
+
+        flags (set): Checks to keep/filter out
+
+        action (int): Action to be taken on flags:
+                      - 0: Flags will be disabled, rest enabled
+                      - 1: Flags will be enabled, rest disabled
+        """
         self.content = content
+        self.file_path = file_path
+
+        self.flags = flags
+        self.action = action
 
         self.import_strs = {'from', 'import'}
         self.end_chars = {':', ';', ',', '\\'}
-        self.implicit_end_chars = {')', ']', '}', '"""', '\'\'\''}
+        self.implicit_end_chars = {')', ']', '}', '"""', "'''"}
+
+    def func_enabled(func):
+        def wrapper(self, *args, **kwargs):
+            is_enabled = 1
+        
+            function_name = func.__name__.strip()
+
+            if self.action == 0:
+                is_enabled = function_name not in self.flags
+            
+            elif self.action == 1:
+                is_enabled = function_name in self.flags
+            
+            #print(function_name, is_enabled)
+            if is_enabled:
+                func(self, *args, **kwargs)
+        return wrapper
 
     def throw_error(self, 
                     idx, 
@@ -76,30 +113,43 @@ class _Check:
             return False
         except SyntaxError:
             return not any(line[-1] == x for x in self.implicit_end_chars)
-    
-    def imports(self, length_requirement=True):
-        for idx, line in enumerate(self.content):
-            if not line.strip():
-                continue 
+        
+    def semicolon_split(self, line):
+        ast_tree = ast.parse(line)
 
-            if '__import__' in line:
+        split_lines = []
+
+        for node in ast_tree.body:
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                func_call_line = ast.get_source_segment(line, node)
+                split_lines.extend(func_call_line.split(';'))
+            else:
+                split_lines.append(ast.get_source_segment(line, node))
+
+        split_lines = [line.strip() for line in split_lines]
+        return split_lines
+    
+    @func_enabled
+    def imports(self, length_req=True):
+        def imports_check_line(line):
+            if any(x in line for x in banned_keywords):
                 self.throw_error(idx, 
                                  type='SyntaxError', 
-                                 message="deprecated syntax; please use \"from...import\" instead (thx Albert lol)",
+                                 message="deprecated syntax; please use \"from...import\" instead",
                                  error_position=0)
             # check if statement actually imports something
             is_importer = 0  
             try:
                 tree = ast.parse(line)
             except Exception:
-                continue
+                return
 
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
                     is_importer = 1
                     break 
             if not is_importer:
-                continue 
+                return
 
             # fix for one-liners
             line = line.split(';')[0]
@@ -136,7 +186,7 @@ class _Check:
                                     message="alias cannot be the same as member name",
                                     error_position=error_position)    
                     
-                elif length_requirement:
+                elif length_req:
                     minimum_len = 2 * (module_len + len(words[-3]))
                     if len(words[-1]) < minimum_len:
                         error_position -= 1
@@ -147,18 +197,33 @@ class _Check:
                 # account for the comma
                 error_position += 1
 
-            # if line.startswith('from') or 'as' in line.split():
-            #     # invalid syntax
-            #     self.throw_error(idx, 
-            #                      type='SyntaxError', 
-            #                      message="deprecated syntax")
-            
-            # elif line.startswith('import') and '.' in line:
-            #     self.throw_error(idx, 
-            #                      type='SyntaxError', 
-            #                      message="submodule imports are no longer supported")
+        # bypass bans
+        banned_keywords = ['__import__', 'import_module']
 
+        for idx, line in enumerate(self.content):
+            if not line.strip():
+                continue 
 
+            if ';' in line:
+                lines = self.semicolon_split(line)
+                print(lines)
+                for split_line in lines:
+                    imports_check_line(split_line)
+            else:
+                imports_check_line(line)
+
+        # if line.startswith('from') or 'as' in line.split():
+        #     # invalid syntax
+        #     self.throw_error(idx, 
+        #                      type='SyntaxError', 
+        #                      message="deprecated syntax")
+        
+        # elif line.startswith('import') and '.' in line:
+        #     self.throw_error(idx, 
+        #                      type='SyntaxError', 
+        #                      message="submodule imports are no longer supported")
+
+    @func_enabled
     def semicolon(self):
         comment_enabled = 0
 
@@ -182,7 +247,7 @@ class _Check:
             else:
                 self.throw_error(idx, type='SyntaxError', message="expected ';'")
 
-
+    @func_enabled
     def one_line(self, strict=False):
         # 'strict' means no spaces after semicolon here
 
@@ -215,7 +280,10 @@ class _Check:
             error_position += len(line)
 
 
-def run(custom_file_path=None):
+def run(custom_fp=None, enable=[], disable=[]):
+
+    if len(enable) and len(disable):
+        raise ValueError('cannot simultaneously define enables and disables')
 
     # Retrieve caller file info
     frame = inspect.currentframe().f_back
@@ -226,12 +294,76 @@ def run(custom_file_path=None):
         content = f.read().splitlines()
     
     # for vid
-    if custom_file_path is None:
-        custom_file_path = file_path
+    if custom_fp is None:
+        custom_fp = file_path
     
-    check = _Check(custom_file_path, content)
 
-    check.imports()
-    check.semicolon()
-    check.one_line()
+    if len(enable):
+        puso_obj = _PUSO(content, 
+                         custom_fp, 
+                         flags=enable, 
+                         action=1)
+    elif len(disable):
+        puso_obj = _PUSO(content, 
+                         custom_fp, 
+                         flags=disable, 
+                         action=0)
+    else:
+        puso_obj = _PUSO(content, 
+                         custom_fp)
 
+    puso_obj.imports()
+    puso_obj.semicolon()
+    puso_obj.one_line()
+
+
+
+# import ast
+
+# # Set of paired delimiters to check for
+# PAIRED_DELIMITERS = {ast.Tuple, ast.List, ast.Set, ast.Dict}
+
+# def contains_only_paired_delimiters(stmt):
+#     """
+#     Check if a statement only contains a set of paired delimiters and nothing else.
+
+#     Args:
+#         stmt (str): The input statement to check.
+
+#     Returns:
+#         bool: True if the statement only contains paired delimiters, False otherwise.
+#     """
+#     try:
+#         # Parse the input statement into an AST
+#         tree = ast.parse(stmt)
+
+#         # Recursive function to inspect nodes in the AST
+#         def inspect(node):
+#             if isinstance(node, tuple(PAIRED_DELIMITERS)):
+#                 # If the node is one of the expected delimiter types, recursively inspect its children
+#                 return all(inspect(child) for child in ast.iter_child_nodes(node))
+#             elif not isinstance(node, ast.Expr):
+#                 # If any non-delimiter node is found, return False
+#                 return False
+#             return True
+
+#         # Start inspecting from the root of the AST
+#         return inspect(tree)
+#     except SyntaxError:
+#         # If the statement is not a valid Python syntax, return False
+#         return False
+
+# # Example usage
+# stmt1 = "(1, 2, 3)"  # Only contains a tuple delimiter, returns True
+# stmt2 = "[1, 2, 3]"  # Only contains a list delimiter, returns True
+# stmt3 = "{1, 2, 3}"  # Only contains a set delimiter, returns True
+# stmt4 = "{'a': 1, 'b': 2}"  # Only contains a dict delimiter, returns True
+# stmt5 = "(1, 2], 3)"  # Contains a non-matching delimiter, returns False
+# stmt6 = "1, 2, 3"  # Contains non-delimiter nodes, returns False
+
+# print(contains_only_paired_delimiters(stmt1))  # True
+# print(contains_only_paired_delimiters(stmt2))  # True
+# print(contains_only_paired_delimiters(stmt3))  # True
+# print(contains_only_paired_delimiters(stmt4))  # True
+# print(contains_only_paired_delimiters(stmt5))  # False
+# print(contains_only_paired_delimiters(stmt6))  # False
