@@ -410,7 +410,7 @@ def run(custom_fp=None, enable=[], disable=[]):
         puso_obj = _PUSO(content, 
                          custom_fp)
 
-    puso_obj.imports(prevent_imports=True)
+    puso_obj.imports()
     puso_obj.semicolon()
     puso_obj.one_line(delimiter_check=True)
 
