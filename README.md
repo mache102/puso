@@ -16,9 +16,15 @@ Python User Sanity Obliterator
 
 2023-04-15
 - Resolved forced semicolon for implicit line breaks
-- Patched `__import__` bypass for verbose imports, thanks to Albert for pointing it out
+- Patched `__import__` bypass for verbose imports
 - Added one-liner enforcing
 
+2023-04-16
+- Patched importlib bypass
+- Patched exploits for one-liner enforcement
+- Added feature enable/disable
+
+Thanks to AlbertUnruh, SemiSol, Bocz3k, mybearworld, and earth blob for feedback & issue reports
 
 ```
 ⣀⣠⣤⣤⣤⣤⢤⣤⣄⣀⣀⣀⣀⡀⡀⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄
