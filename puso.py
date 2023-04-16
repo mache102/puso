@@ -37,6 +37,11 @@ class _PUSO:
         self.end_chars = {':', ';', ',', '\\'}
         self.implicit_end_chars = {')', ']', '}', '"""', "'''"}
 
+        self.delimiters_left = ['(', '{', '['] #'\'', '"', 
+        self.delimiters_right = [')', '}', ']'] #'\'', '"',
+
+        self.self_filename = os.path.basename(__file__).split('.py')[0] 
+
     def func_enabled(func):
         def wrapper(self, *args, **kwargs):
             is_enabled = 1
@@ -130,7 +135,7 @@ class _PUSO:
         return split_lines
     
     @func_enabled
-    def imports(self, length_req=True):
+    def imports(self, length_req=True, prevent_imports=False):
         def imports_check_line(line):
             if any(x in line for x in banned_keywords):
                 self.throw_error(idx, 
@@ -197,6 +202,29 @@ class _PUSO:
                 # account for the comma
                 error_position += 1
 
+        def prevent_imports_checker(line):
+            if 'import' in line \
+                and f'from {self.self_filename} import' not in line:
+
+                self.throw_error(idx, 
+                                type='SyntaxError', 
+                                message="importing modules is not supported") 
+
+
+        if prevent_imports:
+            for idx, line in enumerate(self.content):
+                if not line.strip():
+                    continue 
+
+                if ';' in line:
+                    lines = self.semicolon_split(line)
+                    for split_line in lines:
+                        prevent_imports_checker(split_line)
+                else:
+                    prevent_imports_checker(line)
+     
+            return
+        
         # bypass bans
         banned_keywords = ['__import__', 'import_module']
 
@@ -206,7 +234,6 @@ class _PUSO:
 
             if ';' in line:
                 lines = self.semicolon_split(line)
-                print(lines)
                 for split_line in lines:
                     imports_check_line(split_line)
             else:
@@ -248,7 +275,7 @@ class _PUSO:
                 self.throw_error(idx, type='SyntaxError', message="expected ';'")
 
     @func_enabled
-    def one_line(self, strict=False):
+    def one_line(self, strict=False, delimiter_check=True):
         # 'strict' means no spaces after semicolon here
 
         if len(self.content) > 1:
@@ -270,13 +297,26 @@ class _PUSO:
             msg = 'nice try buddy.'
 
         error_position = 0
-        for line in lines:
+        for line in lines: 
+            if not line:
+                continue
+
             if line[:line_start].isspace():
                 self.throw_error(0, 
                                 type='SyntaxError', 
                                 message=msg,
                                 error_position=error_position+int(not(strict))+1)  
-            
+                
+            if delimiter_check:
+                temp_line = line.strip()
+
+                for left, right in zip(self.delimiters_left, self.delimiters_right):
+                    if temp_line[0] == left and temp_line[-1] == right:
+                        self.throw_error(0, 
+                                type='SyntaxError', 
+                                message='expression bypass has been disabled',
+                                error_position=error_position+int(not(strict))+1)  
+
             error_position += len(line)
 
 
@@ -312,58 +352,7 @@ def run(custom_fp=None, enable=[], disable=[]):
         puso_obj = _PUSO(content, 
                          custom_fp)
 
-    puso_obj.imports()
+    puso_obj.imports(prevent_imports=True)
     puso_obj.semicolon()
-    puso_obj.one_line()
+    puso_obj.one_line(delimiter_check=True)
 
-
-
-# import ast
-
-# # Set of paired delimiters to check for
-# PAIRED_DELIMITERS = {ast.Tuple, ast.List, ast.Set, ast.Dict}
-
-# def contains_only_paired_delimiters(stmt):
-#     """
-#     Check if a statement only contains a set of paired delimiters and nothing else.
-
-#     Args:
-#         stmt (str): The input statement to check.
-
-#     Returns:
-#         bool: True if the statement only contains paired delimiters, False otherwise.
-#     """
-#     try:
-#         # Parse the input statement into an AST
-#         tree = ast.parse(stmt)
-
-#         # Recursive function to inspect nodes in the AST
-#         def inspect(node):
-#             if isinstance(node, tuple(PAIRED_DELIMITERS)):
-#                 # If the node is one of the expected delimiter types, recursively inspect its children
-#                 return all(inspect(child) for child in ast.iter_child_nodes(node))
-#             elif not isinstance(node, ast.Expr):
-#                 # If any non-delimiter node is found, return False
-#                 return False
-#             return True
-
-#         # Start inspecting from the root of the AST
-#         return inspect(tree)
-#     except SyntaxError:
-#         # If the statement is not a valid Python syntax, return False
-#         return False
-
-# # Example usage
-# stmt1 = "(1, 2, 3)"  # Only contains a tuple delimiter, returns True
-# stmt2 = "[1, 2, 3]"  # Only contains a list delimiter, returns True
-# stmt3 = "{1, 2, 3}"  # Only contains a set delimiter, returns True
-# stmt4 = "{'a': 1, 'b': 2}"  # Only contains a dict delimiter, returns True
-# stmt5 = "(1, 2], 3)"  # Contains a non-matching delimiter, returns False
-# stmt6 = "1, 2, 3"  # Contains non-delimiter nodes, returns False
-
-# print(contains_only_paired_delimiters(stmt1))  # True
-# print(contains_only_paired_delimiters(stmt2))  # True
-# print(contains_only_paired_delimiters(stmt3))  # True
-# print(contains_only_paired_delimiters(stmt4))  # True
-# print(contains_only_paired_delimiters(stmt5))  # False
-# print(contains_only_paired_delimiters(stmt6))  # False
