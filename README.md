@@ -23,8 +23,12 @@ Python User Sanity Obliterator
 - Patched importlib bypass
 - Patched exploits for one-liner enforcement
 - Added feature enable/disable
+- Added total import disable
 
-Thanks to AlbertUnruh, SemiSol, Bocz3k, mybearworld, and earth blob for feedback & issue reports
+2023-04-17
+- Patched exec/eval/compile bypass
+
+Thanks to AlbertUnruh, SemiSol, Bocz3k, mybearworld, earth blob, Remi-Avec-Un-I, and discriminating for feedback & issue reports
 
 ```
 ⣀⣠⣤⣤⣤⣤⢤⣤⣄⣀⣀⣀⣀⡀⡀⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄

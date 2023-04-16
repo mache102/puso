@@ -86,7 +86,7 @@ class _PUSO:
 
         sys.exit(1)
 
-    def get_true_contents(line, max_iters=100):
+    def get_true_contents(self, line, max_iters=100):
         contents = line
 
         for iter in range(max_iters):
@@ -112,19 +112,58 @@ class _PUSO:
 
         return prev_contents
     
+    def eec_bypass(self, idx, line):
+        # resolve eval, exec, compile bypasses
+
+        # keep as true; AST can't detect some 
+        naive = True
+        if naive:
+            if 'eval(' in line or 'exec(' in line or 'compile(' in line:
+                self.throw_error(idx, 
+                    type='SyntaxError', 
+                    message="exec(), eval(), and compile() have been disabled for 'security' reasons",
+                    error_position=0)
+        else:
+            try:
+                tree = ast.parse(line)
+            except SyntaxError:
+                return False
+            
+            extracted_line = line
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign):
+                    extracted_line = ast.unparse(node.value)
+
+            try:
+                tree = ast.parse(extracted_line)
+            except SyntaxError:
+                return False
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Expr) \
+                    and isinstance(node.value, ast.Call) \
+                    and isinstance(node.value.func, ast.Name) \
+                    and node.value.func.id in ('eval', 'exec', 'compile'):
+                    
+                    self.throw_error(idx, 
+                        type='SyntaxError', 
+                        message="exec(), eval(), and compile() have been disabled for security reasons",
+                        error_position=0)
+
+    # faulty
     def has_implicit_line_break(self, line):
         try:
             ast.parse(line, mode='eval')
             return False
         except SyntaxError:
-            return not any(line[-1] == x for x in self.implicit_end_chars)
+            return any(line[-1] == x for x in self.implicit_end_chars)
         
     def semicolon_split(self, line):
-        ast_tree = ast.parse(line)
+        tree = ast.parse(line)
 
         split_lines = []
 
-        for node in ast_tree.body:
+        for node in tree.body:
             if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
                 func_call_line = ast.get_source_segment(line, node)
                 split_lines.extend(func_call_line.split(';'))
@@ -136,12 +175,12 @@ class _PUSO:
     
     @func_enabled
     def imports(self, length_req=True, prevent_imports=False):
-        def imports_check_line(line):
+        def imports_check_line(idx, line):
             if any(x in line for x in banned_keywords):
                 self.throw_error(idx, 
-                                 type='SyntaxError', 
-                                 message="deprecated syntax; please use \"from...import\" instead",
-                                 error_position=0)
+                    type='SyntaxError', 
+                    message="deprecated syntax; please use \"from...import\" instead",
+                    error_position=0)
             # check if statement actually imports something
             is_importer = 0  
             try:
@@ -162,9 +201,9 @@ class _PUSO:
             # Code imports something
             if line.startswith('import'):
                 self.throw_error(idx, 
-                                 type='SyntaxError', 
-                                 message="deprecated syntax; please use \"from...import\" instead",
-                                 error_position=0)
+                    type='SyntaxError', 
+                    message="deprecated syntax; please use \"from...import\" instead",
+                    error_position=0)
             
             imports = line.split(',')
 
@@ -178,37 +217,37 @@ class _PUSO:
 
                 if 'as' not in words:
                     self.throw_error(idx, 
-                                    type='SyntaxError', 
-                                    message="syntax may cause conflicts; please use \"from...import...as\" instead",
-                                    error_position=error_position)
+                        type='SyntaxError', 
+                        message="syntax may cause conflicts; please use \"from...import...as\" instead",
+                        error_position=error_position)
                     
                 elif words[-1] == words[-3]:
                     # member and alias are the same
 
                     error_position -= len(words[-1])
                     self.throw_error(idx, 
-                                    type='SyntaxError', 
-                                    message="alias cannot be the same as member name",
-                                    error_position=error_position)    
+                        type='SyntaxError', 
+                        message="alias cannot be the same as member name",
+                        error_position=error_position)    
                     
                 elif length_req:
                     minimum_len = 2 * (module_len + len(words[-3]))
                     if len(words[-1]) < minimum_len:
                         error_position -= 1
                         self.throw_error(idx, 
-                                    type='SyntaxError', 
-                                    message=f"alias must be {minimum_len} characters or longer",
-                                    error_position=error_position)    
+                            type='SyntaxError', 
+                            message=f"alias must be {minimum_len} characters or longer",
+                            error_position=error_position)    
                 # account for the comma
                 error_position += 1
 
-        def prevent_imports_checker(line):
+        def prevent_imports_checker(idx, line):
             if 'import' in line \
                 and f'from {self.self_filename} import' not in line:
 
                 self.throw_error(idx, 
-                                type='SyntaxError', 
-                                message="importing modules is not supported") 
+                    type='SyntaxError', 
+                    message="importing modules is not supported") 
 
 
         if prevent_imports:
@@ -216,12 +255,17 @@ class _PUSO:
                 if not line.strip():
                     continue 
 
+                if line[0] == '#':
+                    continue
+                
+                self.eec_bypass(idx, line)
+
                 if ';' in line:
                     lines = self.semicolon_split(line)
                     for split_line in lines:
-                        prevent_imports_checker(split_line)
+                        prevent_imports_checker(idx, split_line)
                 else:
-                    prevent_imports_checker(line)
+                    prevent_imports_checker(idx, line)
      
             return
         
@@ -232,12 +276,17 @@ class _PUSO:
             if not line.strip():
                 continue 
 
+            if line[0] == '#':
+                continue
+            
+            self.eec_bypass(idx, line)
+
             if ';' in line:
                 lines = self.semicolon_split(line)
                 for split_line in lines:
-                    imports_check_line(split_line)
+                    imports_check_line(idx, split_line)
             else:
-                imports_check_line(line)
+                imports_check_line(idx, line)
 
         # if line.startswith('from') or 'as' in line.split():
         #     # invalid syntax
@@ -257,9 +306,15 @@ class _PUSO:
         for idx, line in enumerate(self.content):
             if not line.strip():
                 continue 
-
-            if self.has_implicit_line_break(line):
+            
+            if line[0] == '#':
                 continue
+            
+            self.eec_bypass(idx, line)
+
+            # if self.has_implicit_line_break(line):
+            #     print(line)
+            #     continue
 
             if line.startswith('\'\'\'') or line.startswith('"""'):
                 comment_enabled = not(comment_enabled)
@@ -267,12 +322,13 @@ class _PUSO:
 
             if any(line.startswith(x) for x in self.import_strs) \
                 or any(line.endswith(x) for x in self.end_chars) \
-                or comment_enabled \
-                or line[0] == '#':
+                or comment_enabled:
+
                 continue
 
-            else:
-                self.throw_error(idx, type='SyntaxError', message="expected ';'")
+            self.throw_error(idx, 
+                type='SyntaxError', 
+                message="expected ';'")
 
     @func_enabled
     def one_line(self, strict=False, delimiter_check=True):
@@ -280,13 +336,13 @@ class _PUSO:
 
         if len(self.content) > 1:
             self.throw_error(1, 
-                            type='SyntaxError', 
-                            message=f"maximum program line count (1) exceeded",
-                            error_position=0)  
+                type='SyntaxError', 
+                message=f"maximum program line count (1) exceeded",
+                error_position=0)  
 
         # prevent the word wrap + space bypass
         one_liner = self.content[0]
-        lines = one_liner.split(';')
+        lines = self.semicolon_split(one_liner)
         
         if strict: 
             line_start = 1
@@ -301,11 +357,13 @@ class _PUSO:
             if not line:
                 continue
 
+            self.eec_bypass(0, line)
+
             if line[:line_start].isspace():
                 self.throw_error(0, 
-                                type='SyntaxError', 
-                                message=msg,
-                                error_position=error_position+int(not(strict))+1)  
+                    type='SyntaxError', 
+                    message=msg,
+                    error_position=error_position+int(not(strict))+1)  
                 
             if delimiter_check:
                 temp_line = line.strip()
@@ -313,9 +371,9 @@ class _PUSO:
                 for left, right in zip(self.delimiters_left, self.delimiters_right):
                     if temp_line[0] == left and temp_line[-1] == right:
                         self.throw_error(0, 
-                                type='SyntaxError', 
-                                message='expression bypass has been disabled',
-                                error_position=error_position+int(not(strict))+1)  
+                            type='SyntaxError', 
+                            message='expression bypass has been disabled',
+                            error_position=error_position+int(not(strict))+1)  
 
             error_position += len(line)
 
