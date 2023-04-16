@@ -197,16 +197,16 @@ class _Check:
         lines = one_liner.split(';')
         
         if strict: 
-            line_start = ' '
+            line_start = 1
             msg = 'space after semicolon is not allowed' 
         else:
             # starts with two or more spaces 
-            line_start = '  '
+            line_start = 2
             msg = 'nice try buddy.'
 
         error_position = 0
         for line in lines:
-            if line.startswith(line_start):
+            if line[:line_start].isspace():
                 self.throw_error(0, 
                                 type='SyntaxError', 
                                 message=msg,
