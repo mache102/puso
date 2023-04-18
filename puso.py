@@ -3,6 +3,7 @@ import os
 import sys
 import inspect
 import textwrap
+import builtins
 
 """
 PUSO: Python User Sanity Obliterator
@@ -118,7 +119,7 @@ class _PUSO:
         # keep as true; AST can't detect some 
         naive = True
         if naive:
-            if 'eval(' in line or 'exec(' in line or 'compile(' in line:
+            if 'eval' in line or 'exec' in line or 'compile' in line:
                 self.throw_error(idx, 
                     type='SyntaxError', 
                     message="exec(), eval(), and compile() have been disabled for 'security' reasons",
@@ -241,33 +242,38 @@ class _PUSO:
                 # account for the comma
                 error_position += 1
 
-        def prevent_imports_checker(idx, line):
-            if 'import' in line \
-                and f'from {self.self_filename} import' not in line:
+        # def prevent_imports_checker(idx, line):
+        #     if 'import' in line \
+        #         and f'from {self.self_filename} import' not in line:
 
-                self.throw_error(idx, 
-                    type='SyntaxError', 
-                    message="importing modules is not supported") 
-
+        #         self.throw_error(idx, 
+        #             type='SyntaxError', 
+        #             message="importing modules is not supported") 
+                
+        def _block_import(name, globals=None, locals=None, fromlist=None, level=0):
+            self.throw_error(idx, 
+                type='SyntaxError', 
+                message="importing modules is not supported") 
 
         if prevent_imports:
-            for idx, line in enumerate(self.content):
-                if not line.strip():
-                    continue 
+            builtins.__import__ = _block_import
+            # for idx, line in enumerate(self.content):
+            #     if not line.strip():
+            #         continue 
 
-                if line[0] == '#':
-                    continue
+            #     if line[0] == '#':
+            #         continue
                 
-                self.eec_bypass(idx, line)
+            #     self.eec_bypass(idx, line)
 
-                if ';' in line:
-                    lines = self.semicolon_split(line)
-                    for split_line in lines:
-                        prevent_imports_checker(idx, split_line)
-                else:
-                    prevent_imports_checker(idx, line)
+            #     if ';' in line:
+            #         lines = self.semicolon_split(line)
+            #         for split_line in lines:
+            #             prevent_imports_checker(idx, split_line)
+            #     else:
+            #         prevent_imports_checker(idx, line)
      
-            return
+            # return
         
         # bypass bans
         banned_keywords = ['__import__', 'import_module']
@@ -410,7 +416,7 @@ def run(custom_fp=None, enable=[], disable=[]):
         puso_obj = _PUSO(content, 
                          custom_fp)
 
-    puso_obj.imports()
+    puso_obj.imports(prevent_imports=False)
     puso_obj.semicolon()
     puso_obj.one_line(delimiter_check=True)
 
