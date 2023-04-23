@@ -4,6 +4,7 @@ Python User Sanity Obliterator
 # Current Features:
 - Semicolon Enforcing
 - Verbose Imports
+- One-Liner Enforcing
 
 # Changelog:
 
